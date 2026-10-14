@@ -127,7 +127,7 @@ footer a{color:var(--muted)}
         <div class="stat"><div class="label">Withdrawable</div><div class="v num" id="withdrawable">—</div><div class="s" id="withdrawableSub">&nbsp;</div></div>
         <div class="stat"><div class="label">Margin used</div><div class="v num" id="marginUsed">—</div><div class="s num" id="marginSub">&nbsp;</div><div class="bar"><i id="marginBar"></i></div></div>
         <div class="stat"><div class="label">Unrealized P&amp;L</div><div class="v num" id="upnl">—</div><div class="s num" id="upnlSub">&nbsp;</div></div>
-        <div class="stat"><div class="label">Open slots</div><div class="v num" id="slots">—</div><div class="s" id="slotsSub">max 4 positions</div></div>
+        <div class="stat"><div class="label">Open slots</div><div class="v num" id="slots">—</div><div class="s" id="slotsSub">max 5 positions</div></div>
         <div class="stat"><div class="label">Leverage</div><div class="v num" id="leverage">—</div><div class="s num" id="ntlSub">&nbsp;</div></div>
       </div>
     </section>
@@ -217,11 +217,11 @@ const API = 'https://api.hyperliquid.xyz/info';
 const DEFAULT_WALLET = '0x0abbc4fa72091bf0db0311bce4667cbabb56ece4';
 const REFRESH_MS = 30000;
 const TZ = 'America/New_York';
-let MAX_POS = 4, MARGIN_CAP = 0.85, DAILY_STOP = 0.08;
+let MAX_POS = 5, MARGIN_CAP = 0.85, DAILY_STOP = 0.08;
 const OWNER = '0x0abbc4fa72091bf0db0311bce4667cbabb56ece4';
 function loadSettings(){ let o={}; try{o=JSON.parse(localStorage.getItem('hl_settings')||'{}')}catch(e){}
   const ok=(v,lo,hi)=>isFinite(v)&&v>=lo&&v<=hi;
-  DAILY_STOP = ok(+o.daily,0.1,100)? o.daily/100 : 0.08; MARGIN_CAP = ok(+o.cap,1,100)? o.cap/100 : 0.85; MAX_POS = ok(+o.max,1,1000)? Math.round(o.max) : 4; }
+  DAILY_STOP = ok(+o.daily,0.1,100)? o.daily/100 : 0.08; MARGIN_CAP = ok(+o.cap,1,100)? o.cap/100 : 0.85; MAX_POS = ok(+o.max,1,1000)? Math.round(o.max) : 5; }
 loadSettings();
 let lastLedger = [];
 const STABLES = new Set(['USDC','USDT0','USDE','USDH','USDT']);
@@ -658,9 +658,9 @@ $('h1title').textContent = WALLET===OWNER ? 'Odysseus' : 'Hyperliquid';
 { const u=new URL(location.href); if(u.searchParams.get('wallet')!==WALLET){ u.searchParams.set('wallet',WALLET); history.replaceState(null,'',u);} }
 const fillSets=()=>{ $('setDaily').value=+(DAILY_STOP*100).toFixed(2); $('setCap').value=+(MARGIN_CAP*100).toFixed(1); $('setMax').value=MAX_POS; };
 fillSets();
-['setDaily','setCap','setMax'].forEach(id=>$(id).addEventListener('change',()=>{
+['setDaily','setCap','setMax'].forEach(id=>['change','input'].forEach(ev=>$(id).addEventListener(ev,()=>{
   try{localStorage.setItem('hl_settings',JSON.stringify({daily:+$('setDaily').value,cap:+$('setCap').value,max:+$('setMax').value}))}catch(e){}
-  loadSettings(); fillSets(); refresh(); }));
+  loadSettings(); refresh(); })));
 $('setReset').addEventListener('click',()=>{ try{localStorage.removeItem('hl_settings')}catch(e){} loadSettings(); fillSets(); refresh(); });
 $('shareBtn').addEventListener('click',async()=>{ const l=location.origin+location.pathname+'?wallet='+WALLET;
   try{ await navigator.clipboard.writeText(l); $('shareBtn').textContent='Copied!'; }catch(e){ prompt('Copy link:',l); }
