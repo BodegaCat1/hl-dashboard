@@ -272,6 +272,40 @@ async function info(body, tries=3){
   }
   throw new Error(body.type+': '+(lastErr && lastErr.message || 'failed'));
 }
+// ---------- HIP-3 builder dexes (xyz, flx, ...) ----------
+let DEXES = null;
+async function dexList(){
+  if (DEXES) return DEXES;
+  try{ const d = await info({type:'perpDexs'},2); DEXES = (d||[]).filter(x=>x&&x.name).map(x=>x.name); }catch(e){ return []; }
+  return DEXES;
+}
+// Per-dex clearinghouse states in one parallel batch; failures ignored. Orders/mids only for dexes in use.
+async function dexStates(fillsP){
+  const dexes = await dexList();
+  const st = await Promise.allSettled(dexes.map(d=>info({type:'clearinghouseState',user:WALLET,dex:d},1)));
+  const fills = await fillsP.catch(()=>[]);
+  const used = new Set((fills||[]).map(f=>f.coin.includes(':')?f.coin.split(':')[0]:null).filter(Boolean));
+  const out = [];
+  st.forEach((r,i)=>{ if(r.status!=='fulfilled'||!r.value) return; const ch=r.value;
+    const hasPos=(ch.assetPositions||[]).some(p=>n(p.position.szi)!==0);
+    if (hasPos || used.has(dexes[i])) out.push({dex:dexes[i], ch}); });
+  await Promise.all(out.map(async o=>{
+    const [ord,mids] = await Promise.allSettled([info({type:'frontendOpenOrders',user:WALLET,dex:o.dex},1), info({type:'allMids',dex:o.dex},1)]);
+    o.orders = ord.status==='fulfilled'?ord.value||[]:[]; o.mids = mids.status==='fulfilled'?mids.value||{}:{};
+  }));
+  return out;
+}
+function mergeCh(main, extra){
+  if (!extra||!extra.length) return main;
+  const ms = Object.assign({}, main.marginSummary||{});
+  const ch = Object.assign({}, main, {assetPositions:(main.assetPositions||[]).slice(), dexValue:0});
+  extra.forEach(({ch:x})=>{ const m=x.marginSummary||{};
+    ms.totalMarginUsed = n(ms.totalMarginUsed)+n(m.totalMarginUsed);
+    ms.totalNtlPos = n(ms.totalNtlPos)+n(m.totalNtlPos);
+    ch.dexValue += n(m.accountValue);
+    ch.assetPositions = ch.assetPositions.concat(x.assetPositions||[]); });
+  ch.marginSummary = ms; return ch;
+}
 async function fillsSince(startTime){
   // paginate userFillsByTime (max ~2000 per call)
   let out=[], start=startTime;
@@ -300,7 +334,8 @@ function renderAccount(ch, spot, portfolio, mode){
   let spotStable = 0;
   if (spot && spot.balances) spot.balances.forEach(b=>{ if(STABLES.has(b.coin)) spotStable += n(b.total); });
   const unified = mode==='unifiedAccount' || mode==='portfolioMargin';
-  if (!isFinite(equity)) equity = unified ? spotStable : n(ms.accountValue)+spotStable;
+  // fallback only: unified spot USDC already includes all dexes' uPnL; standard accounts add each dex's value
+  if (!isFinite(equity)) equity = unified ? spotStable : n(ms.accountValue)+n(ch.dexValue)+spotStable;
   let withdrawable = n(ch.withdrawable);
   let wSub = 'perp';
   if (unified && spot && spot.tokenToAvailableAfterMaintenance){
@@ -308,7 +343,7 @@ function renderAccount(ch, spot, portfolio, mode){
     if (usdc){ withdrawable = n(usdc[1]); wSub = 'USDC available'; }
   }
   $('equity').textContent = usd(equity);
-  $('equitySub').innerHTML = unified ? `Unified account · spot USDC ${usd(spotStable)}` : `Perps ${usd(ms.accountValue)} · Spot stables ${usd(spotStable)}`;
+  $('equitySub').innerHTML = unified ? `Unified account · spot USDC ${usd(spotStable)}` : `Perps ${usd(n(ms.accountValue)+n(ch.dexValue))} · Spot stables ${usd(spotStable)}`;
   $('withdrawable').textContent = usd(withdrawable);
   $('withdrawableSub').textContent = wSub;
   $('marginUsed').textContent = usd(marginUsed);
@@ -608,6 +643,7 @@ async function refresh(){
     ledger:info({type:'userNonFundingLedgerUpdates', user:WALLET, startTime: now-400*86400000}),
     funding: info({type:'userFunding', user:WALLET, startTime: now-30*86400000}),
   };
+  calls.dex = dexStates(calls.fills);
   const keys = Object.keys(calls);
   const res = await Promise.allSettled(Object.values(calls));
   const R = {}, E = {}; res.forEach((r,i)=>{ if(r.status==='fulfilled') R[keys[i]]=r.value; else E[keys[i]]=r.reason; });
@@ -616,6 +652,12 @@ async function refresh(){
   try{
     if (R.port) lastPortfolio = R.port;
     if (R.ledger) lastLedger = R.ledger;
+    const X = R.dex||[];
+    if (X.length){
+      if (R.ch) R.ch = mergeCh(R.ch, X);
+      R.mids = Object.assign({}, R.mids||{}, ...X.map(o=>o.mids));
+      if (R.orders) R.orders = R.orders.concat(...X.map(o=>o.orders));
+    }
     if (R.ch){
       const {positions, equity} = renderAccount(R.ch, R.spot, R.port||lastPortfolio, R.mode);
       renderPositions(positions, R.mids||{}, R.orders||[]);
