@@ -114,23 +114,6 @@ footer a{color:var(--muted)}
     <div class="pill" id="statusPill"><span class="dot load" id="statusDot"></span><span id="statusTxt">Loading…</span></div>
   </header>
 
-  <section class="card" style="margin-bottom:12px">
-    <form class="wallet" id="walletForm">
-      <input id="walletInput" spellcheck="false" autocomplete="off" placeholder="0x… any Hyperliquid wallet" aria-label="Wallet address">
-      <button class="btn" type="submit">Load</button>
-      <button class="btn ghost" type="button" id="refreshBtn">Refresh</button>
-      <button class="btn ghost" type="button" id="shareBtn">Copy link</button>
-    </form>
-    <div class="cerr" id="walletErr"></div>
-    <details class="note" style="margin-top:8px"><summary style="cursor:pointer">My risk settings (saved on this device)</summary>
-      <div class="sets">
-        <label>Daily loss stop %<input id="setDaily" type="number" min="0.1" step="0.1" inputmode="decimal"></label>
-        <label>Margin cap %<input id="setCap" type="number" min="1" max="100" step="1" inputmode="numeric"></label>
-        <label>Max positions<input id="setMax" type="number" min="1" step="1" inputmode="numeric"></label>
-        <button class="btn ghost" type="button" id="setReset">Reset 8 / 85 / 4</button>
-      </div></details>
-  </section>
-
   <div class="err" id="globalErr"></div>
 
   <div class="grid">
@@ -202,6 +185,23 @@ footer a{color:var(--muted)}
       <div class="cerr" id="fillErr"></div>
     </section>
 
+    <section class="card span2">
+      <h2>Wallet <span class="tag">read-only, public data · share with ?wallet=0x…</span></h2>
+    <form class="wallet" id="walletForm">
+      <input id="walletInput" spellcheck="false" autocomplete="off" placeholder="0x… any Hyperliquid wallet" aria-label="Wallet address">
+      <button class="btn" type="submit">Load</button>
+      <button class="btn ghost" type="button" id="refreshBtn">Refresh</button>
+      <button class="btn ghost" type="button" id="shareBtn">Copy link</button>
+    </form>
+    <div class="cerr" id="walletErr"></div>
+    <details class="note" style="margin-top:8px"><summary style="cursor:pointer">My risk settings (saved on this device)</summary>
+      <div class="sets">
+        <label>Daily loss stop %<input id="setDaily" type="number" min="0.1" step="0.1" inputmode="decimal"></label>
+        <label>Margin cap %<input id="setCap" type="number" min="1" max="100" step="1" inputmode="numeric"></label>
+        <label>Max positions<input id="setMax" type="number" min="1" step="1" inputmode="numeric"></label>
+        <button class="btn ghost" type="button" id="setReset">Reset 8 / 85 / 4</button>
+      </div></details>
+    </section>
   </div>
 
   <footer>
