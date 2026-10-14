@@ -101,17 +101,35 @@ footer a{color:var(--muted)}
 .lvl{display:flex;flex-wrap:wrap;margin-top:10px}
 .bar.loss>i{background:linear-gradient(90deg,var(--amber),var(--red))}
 .chip.trail{background:rgba(251,191,36,.14);color:var(--amber)}.chip.man{background:rgba(139,145,155,.18);color:#cfd3d9}
+.sets{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;align-items:flex-end}.sets label{display:flex;flex-direction:column;gap:4px;font-size:12px}.sets input{width:110px;background:var(--card2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:8px}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <div>
-      <h1>Odysseus</h1>
+      <h1 id="h1title">Odysseus</h1>
       <div class="sub">Hyperliquid · <span id="acctMode">—</span></div>
     </div>
     <div class="pill" id="statusPill"><span class="dot load" id="statusDot"></span><span id="statusTxt">Loading…</span></div>
   </header>
+
+  <section class="card" style="margin-bottom:12px">
+    <form class="wallet" id="walletForm">
+      <input id="walletInput" spellcheck="false" autocomplete="off" placeholder="0x… any Hyperliquid wallet" aria-label="Wallet address">
+      <button class="btn" type="submit">Load</button>
+      <button class="btn ghost" type="button" id="refreshBtn">Refresh</button>
+      <button class="btn ghost" type="button" id="shareBtn">Copy link</button>
+    </form>
+    <div class="cerr" id="walletErr"></div>
+    <details class="note" style="margin-top:8px"><summary style="cursor:pointer">My risk settings (saved on this device)</summary>
+      <div class="sets">
+        <label>Daily loss stop %<input id="setDaily" type="number" min="0.1" step="0.1" inputmode="decimal"></label>
+        <label>Margin cap %<input id="setCap" type="number" min="1" max="100" step="1" inputmode="numeric"></label>
+        <label>Max positions<input id="setMax" type="number" min="1" step="1" inputmode="numeric"></label>
+        <button class="btn ghost" type="button" id="setReset">Reset 8 / 85 / 4</button>
+      </div></details>
+  </section>
 
   <div class="err" id="globalErr"></div>
 
@@ -162,7 +180,7 @@ footer a{color:var(--muted)}
     <section class="card">
       <h2>Open orders &amp; triggers <span class="tag" id="ordCount"></span></h2>
       <div class="rows" id="orders"><div class="empty">Loading…</div></div>
-      <div class="note">Shows orders resting on the exchange. Stops and TPs that Odysseus rests on the exchange show here and on each position card.</div>
+      <div class="note">Shows orders resting on the exchange. Stops and TPs that the bot/trader rests on the exchange show here and on each position card.</div>
       <div class="cerr" id="ordErr"></div>
     </section>
 
@@ -184,15 +202,6 @@ footer a{color:var(--muted)}
       <div class="cerr" id="fillErr"></div>
     </section>
 
-    <section class="card span2">
-      <h2>Wallet <span class="tag">read-only, public data</span></h2>
-      <form class="wallet" id="walletForm">
-        <input id="walletInput" spellcheck="false" autocomplete="off" placeholder="0x… wallet address" aria-label="Wallet address">
-        <button class="btn" type="submit">Load</button>
-        <button class="btn ghost" type="button" id="refreshBtn">Refresh</button>
-      </form>
-      <div class="cerr" id="walletErr"></div>
-    </section>
   </div>
 
   <footer>
@@ -208,7 +217,12 @@ const API = 'https://api.hyperliquid.xyz/info';
 const DEFAULT_WALLET = '0x0abbc4fa72091bf0db0311bce4667cbabb56ece4';
 const REFRESH_MS = 30000;
 const TZ = 'America/New_York';
-const MAX_POS = 4, MARGIN_CAP = 0.85, DAILY_STOP = 0.08;
+let MAX_POS = 4, MARGIN_CAP = 0.85, DAILY_STOP = 0.08;
+const OWNER = '0x0abbc4fa72091bf0db0311bce4667cbabb56ece4';
+function loadSettings(){ let o={}; try{o=JSON.parse(localStorage.getItem('hl_settings')||'{}')}catch(e){}
+  const ok=(v,lo,hi)=>isFinite(v)&&v>=lo&&v<=hi;
+  DAILY_STOP = ok(+o.daily,0.1,100)? o.daily/100 : 0.08; MARGIN_CAP = ok(+o.cap,1,100)? o.cap/100 : 0.85; MAX_POS = ok(+o.max,1,1000)? Math.round(o.max) : 4; }
+loadSettings();
 let lastLedger = [];
 const STABLES = new Set(['USDC','USDT0','USDE','USDH','USDT']);
 const $ = id => document.getElementById(id);
@@ -299,7 +313,7 @@ function renderAccount(ch, spot, portfolio, mode){
   $('withdrawableSub').textContent = wSub;
   $('marginUsed').textContent = usd(marginUsed);
   const mPct = equity>0 ? marginUsed/equity*100 : 0;
-  $('marginSub').innerHTML = `${mPct.toFixed(1)}% of equity · cap ${MARGIN_CAP*100}%`;
+  $('marginSub').innerHTML = `${mPct.toFixed(1)}% of equity · cap ${+(MARGIN_CAP*100).toFixed(1)}%`;
   $('marginBar').style.width = Math.min(100, mPct/(MARGIN_CAP*100)*100).toFixed(1)+'%';
   const open = positions.filter(p=>n(p.szi)!==0).length;
   $('slots').textContent = Math.max(0,MAX_POS-open)+' / '+MAX_POS;
@@ -467,15 +481,15 @@ function buildTrips(fills, horders){
     tr.R = tr.riskUsd>0 ? (tr.pnl-tr.fees)/tr.riskUsd : NaN;
     let tpN=0;
     tr.exitList=[...tr.exits.values()].sort((a,b)=>a.time-b.time).map(e=>{
-      e.px=e.ntl/e.sz; const o=e.order; let type='other', label='Regime/bot', c='man';
+      e.px=e.ntl/e.sz; const o=e.order; let type='other', label='Bot/API', c='man';
       if(!o){ type='other'; label='Unknown'; }
       else if(/stop/i.test(o.orderType)){ const tp=n(o.triggerPx); const locked=tr.long?tp>=tr.entry:tp<=tr.entry;
         type=locked?'trail':'stop'; label=locked?'Trail/locked stop':'Stop'; c=locked?'trail':'sl';
         e.slip=(e.px/tp-1)*1e4*(tr.long?1:-1); }
       else if(/take profit/i.test(o.orderType)){ tpN++; type='tp'; label='TP'+tpN; c='tp'; }
       else if(o.reduceOnly && o.tif==='Gtc'){ tpN++; type='tp'; label='TP'+tpN; c='tp'; }
-      else if(!o.cloid){ type='manual'; label='Manual'; c='man'; }
-      else { type='other'; label='Regime/bot'; c='man'; }
+      else if(!o.cloid){ type='manual'; label=WALLET===OWNER?'Manual':'Manual?'; c='man'; }
+      else { type='other'; label=WALLET===OWNER?'Regime/bot':'Bot/API'; c='man'; }
       return Object.assign(e,{type,label,c});
     });
     tr.net = tr.pnl-tr.fees;
@@ -518,7 +532,7 @@ function renderToday(fills, port, equity){
   $('today').innerHTML = stat('Realized P&amp;L',sUsd(rp),fs.length+' fills today',cls(rp))+stat('Fees',usd(-fee),'trading fees','neg')
    +stat('Net realized',sUsd(rp-fee),'P&amp;L − fees',cls(rp-fee))
    +stat('Equity vs 00:00',sUsd(chg),`${pct(cp)} · base ${usd(base)}`,cls(chg))
-   +stat('Daily loss stop',isFinite(cp)?(Math.max(0,-cp)).toFixed(2)+'% / 8%':'—',prog>=100?'HIT: no new entries':'drawdown used today',prog>=75?'neg':'',`<div class="bar loss"><i style="width:${prog.toFixed(1)}%"></i></div>`);
+   +stat('Daily loss stop',isFinite(cp)?(Math.max(0,-cp)).toFixed(2)+'% / '+(+(DAILY_STOP*100).toFixed(2))+'%':'—',prog>=100?'HIT: no new entries':'drawdown used today',prog>=75?'neg':'',`<div class="bar loss"><i style="width:${prog.toFixed(1)}%"></i></div>`);
   $('todayNote').textContent = flows ? `Excludes ${sUsd(flows)} in deposits/withdrawals since 00:00 UTC.` : 'No deposits/withdrawals today.';
 }
 
@@ -640,12 +654,24 @@ $('modeSeg').addEventListener('click', e=>{
   chartMode = b.dataset.m; [...$('modeSeg').children].forEach(x=>x.classList.toggle('on', x===b)); renderChart();
 });
 $('walletInput').value = WALLET;
+$('h1title').textContent = WALLET===OWNER ? 'Odysseus' : 'Hyperliquid';
+{ const u=new URL(location.href); if(u.searchParams.get('wallet')!==WALLET){ u.searchParams.set('wallet',WALLET); history.replaceState(null,'',u);} }
+const fillSets=()=>{ $('setDaily').value=+(DAILY_STOP*100).toFixed(2); $('setCap').value=+(MARGIN_CAP*100).toFixed(1); $('setMax').value=MAX_POS; };
+fillSets();
+['setDaily','setCap','setMax'].forEach(id=>$(id).addEventListener('change',()=>{
+  try{localStorage.setItem('hl_settings',JSON.stringify({daily:+$('setDaily').value,cap:+$('setCap').value,max:+$('setMax').value}))}catch(e){}
+  loadSettings(); fillSets(); refresh(); }));
+$('setReset').addEventListener('click',()=>{ try{localStorage.removeItem('hl_settings')}catch(e){} loadSettings(); fillSets(); refresh(); });
+$('shareBtn').addEventListener('click',async()=>{ const l=location.origin+location.pathname+'?wallet='+WALLET;
+  try{ await navigator.clipboard.writeText(l); $('shareBtn').textContent='Copied!'; }catch(e){ prompt('Copy link:',l); }
+  setTimeout(()=>$('shareBtn').textContent='Copy link',1500); });
 $('walletForm').addEventListener('submit', e=>{
   e.preventDefault(); const v = $('walletInput').value.trim();
   if (!isAddr(v)){ showErr('walletErr', new Error('Enter a valid 0x… address (42 characters)')); return; }
   showErr('walletErr', null); WALLET = v.toLowerCase();
   try{ localStorage.setItem('hl_wallet', WALLET); }catch(_){}
   const u = new URL(location.href); u.searchParams.set('wallet', WALLET); history.replaceState(null,'',u);
+  $('h1title').textContent = WALLET===OWNER ? 'Odysseus' : 'Hyperliquid';
   lastPortfolio = null; refresh(); schedule();
 });
 $('refreshBtn').addEventListener('click', ()=>{ refresh(); schedule(); });
